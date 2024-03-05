@@ -1,149 +1,210 @@
+# Required libraries for mathematical operations, data manipulation, and plotting.
 import numpy as np
 import pandas as pd
 import sympy as sp
 import matplotlib.pyplot as plt
-import random 
-
 from scipy.optimize import minimize
 import sympy.plotting as spp
 from sympy import symbols, diff, Poly, solve
 from mpl_toolkits.mplot3d import Axes3D
 
-
-
-# Defining Functions
-
-
 def model(t, x0, alpha):
     """
+    Exponential growth model.
+    Computes x0 * exp(alpha * t).
 
-    Defining the model.
+    Parameters:
+    - t (array-like): Time variable(s) at which to evaluate the model.
+    - x0 (float): Initial value at time t=0.
+    - alpha (float): Growth rate parameter.
 
+    Returns:
+    - array: Model predictions at each time point in t.
     """
-    # Cap the exponent to avoid overflow
-    # capped_exponent = np.minimum(alpha * t, 1000)
-    #print(f"Debug before exp: alpha={alpha}, t={t}, type(alpha)={type(alpha)}, type(t)={type(t)}, alpha*t={alpha*t}, type(alpha*t)={type(alpha*t)}")
-    exp_input = float(alpha) * np.array(t, dtype=float)  # Ensure t is a numeric array
+    exp_input = float(alpha) * np.array(t, dtype=float)
     return x0 * np.exp(exp_input)
 
 def sse(params, data):
     """
+    Sum of squared errors (SSE) between model predictions and data.
 
-    Defining the error function as SSE.
-    
-    params = tuple(x0, alpha)
-    data = pd.DataFrame({'Time': , 'Data': })
-   
+    Parameters:
+    - params (tuple): Model parameters (x0, alpha).
+    - data (pd.DataFrame): Observed data with columns 'Time' and 'Data'.
+
+    Returns:
+    - float: Calculated SSE.
     """
     x0, alpha = params
-    #print(f"Debug in SSE: params={params}, type(params)={type(params)}")
     predictions = model(data['Time'], x0, alpha)
-    x_data = data['Data']
-    return np.sum((x_data - predictions) ** 2)
-
+    return np.sum((data['Data'] - predictions) ** 2)
 
 def data_gen(num_data_points=4, noise_level=0.1, alpha=2, x0=1):
     """
-    
-    Generating data based on x = x0 * exp(alpha * t) with fixed noise at noise_level in the interval [a, b] with a certain num_data_points
+    Generates synthetic data based on the exponential growth model with added noise.
 
-    num_data_points = int
-    noise_level = float/int
-    alpha = float/int
-    x0 = float/int
-    a = float/int
-    b = float/int
+    Parameters:
+    - num_data_points (int): Number of data points to generate.
+    - noise_level (float/int): Standard deviation of the Gaussian noise.
+    - alpha (float/int): True growth rate parameter used for data generation.
+    - x0 (float/int): True initial value used for data generation.
+
+    Returns:
+    - pd.DataFrame: Generated data containing 'Time' and 'Data' columns.
     """
-    t = np.array(list(range(num_data_points)))
-    #print("Saved")
-    x = x0 * np.exp(alpha * t)  # Using a fixed 'true' alpha=2 for data generation
-    noise = np.random.normal(0, noise_level, x.shape)
+    t = np.arange(num_data_points)
+    x = x0 * np.exp(alpha * t)
+    noise = np.random.normal(0, noise_level, size=t.shape)
     x_noisy = x + noise
-    #Making x_noisy rational for Groebner basis computations later...
     x_noisy_rational = np.array([min(sp.Rational(int(xn * 100), 100), 10000) for xn in x_noisy])
-    data = pd.DataFrame({'Time': t, 'Data': x_noisy_rational})
-    return data
-
-
+    return pd.DataFrame({'Time': t, 'Data': x_noisy_rational})
 
 def run_optimization(num_runs, initial_guess, data, method='L-BFGS-B', bounds=None):
     """
-    Running the optimization num_runs number of times with some guess initial_guess
+    Performs multiple runs of numerical optimization to estimate model parameters.
 
-    num_runs = int
-    initial guess = tuple(x0, alpha)
-    data = pd.DataFrame({'Time': , 'Data': })
+    Parameters:
+    - num_runs (int): Number of optimization attempts.
+    - initial_guess (tuple): Initial guess for the model parameters (x0, alpha).
+    - data (pd.DataFrame): Observed data with columns 'Time' and 'Data'.
+    - method (str): Optimization method.
+    - bounds (list of tuples): Bounds on the parameters.
 
+    Returns:
+    - np.array: Array of estimated parameters from each successful optimization run.
     """
-    # Running the optimization
     final_params = []
     for _ in range(num_runs):
-        result = minimize(sse, initial_guess, data, method, bounds)
-        
-        # Check if the optimization was successful
+        result = minimize(sse, initial_guess, args=(data), method=method, bounds=bounds)
         if result.success:
             final_params.append(result.x)
         else:
-            # Handle unsuccessful optimization
-            # For example, append None or log an error message
             final_params.append(None)
-
             print(f"Optimization failed: {result.message} for (x0, alpha) = {initial_guess}")
-
-    # Filter out None values if there are any
-    final_params = [param for param in final_params if param is not None]
-
-    return np.array(final_params)
-
-
-#Compute the error matrix using run_optimization and calculate_error.
+    return np.array([param for param in final_params if param is not None])
 
 def error_matrix(alpha_range, x0_range, data, num_runs=1):
     """
-    Returns the error matrix giving the SSE error on the data for combinations alphas and x0s in the ranges alpha_range, x0_range based.
+    Constructs an error matrix for different combinations of alpha and x0.
 
-    alpha_range = list()
-    x0_range = list()
-    data = pd.DataFrame({'Time': , 'Data': })
+    Parameters:
+    - alpha_range (list): List of alpha values to test.
+    - x0_range (list): List of x0 values to test.
+    - data (pd.DataFrame): Observed data with columns 'Time' and 'Data'.
+    - num_runs (int): Number of optimization runs for each parameter set.
 
+    Returns:
+    - np.ndarray: Matrix of SSE values for each (alpha, x0) pair.
     """
-    # Initialize a matrix to store the errors
-    error_matrix = np.ones((len(alpha_range), len(x0_range)))
-    for i in range(len(error_matrix)):
-        for j in range(len(error_matrix[0])):
-            error_matrix[i][j] = 0
-    # Fill in the matrix
+    error_matrix = np.zeros((len(alpha_range), len(x0_range)))
     for i, alpha in enumerate(alpha_range):
         for j, x0 in enumerate(x0_range):
             initial_guess = (x0, alpha)
             final_param = run_optimization(num_runs, initial_guess, data)
-            if len(final_param) > 0:
-                # Assuming we only run the minimization once and it terminates.
-                error_matrix[i, j] = sse(final_param[0], data)
-            else:
-                error_matrix[i, j] = np.inf
+            error_matrix[i, j] = sse(final_param[0], data) if len(final_param) > 0 else np.inf
     return error_matrix
 
+def evaluate_hessian_at_extremas(params, x_i, t_i):
+    """
+    Evaluates the Hessian matrix at the estimated extremas to determine if they represent maxima.
+
+    Parameters:
+    - params (list of tuples): Estimated parameters (x0, alpha).
+    - x_i (list): Observed data values.
+    - t_i (list): Corresponding time values for the observed data.
+
+    Returns:
+    - list of tuples: Each tuple contains the parameter set and a boolean indicating if it is a maximum.
+    """
+    x0, b = sp.symbols('x0 b')
+    SSE_poly = sum([(x - x0 * b**t)**2 for x, t in zip(x_i, t_i)])
+    partial_x0x0 = sp.diff(SSE_poly, x0, x0)
+    partial_x0b = sp.diff(SSE_poly, x0, b)
+    partial_bb = sp.diff(SSE_poly, b, b)
+    hessian_general = sp.Matrix([[partial_x0x0, partial_x0b], [partial_x0b, partial_bb]])
+    maxima_results = []
+    for param in params:
+        hessian_at_point = hessian_general.subs({x0: param[0], b: np.exp(param[1])})
+        det = hessian_at_point.det()
+        trace = hessian_at_point.trace()
+        if det > 0 and trace > 0:
+            maxima_results.append((param, True))
+        else:
+            maxima_results.append((param, False))
+    return maxima_results
+
+def find_x0_alpha_pairs(G, b_arr):
+    """
+    Finds pairs of (x0, alpha) that satisfy the system of equations G for given values of b.
+
+    Parameters:
+    - G (list of sympy expressions): System of equations to solve.
+    - b_arr (list of floats): Values of b to plug into the system.
+
+    Returns:
+    - list of tuples: Each tuple represents a pair of (x0, alpha) that solves the system for a given b.
+    """
+    x0, b = sp.symbols('x0 b')
+    x0_arr = []
+    alpha_arr = []
+    for b_i in b_arr:
+        x0_i = sp.solve(G[0].subs(b, b_i), x0)[0]
+        x0_arr.append(x0_i)
+        alpha_arr.append(sp.log(b_i))
+    return [(float(x0), float(alpha)) for x0, alpha in zip(x0_arr, alpha_arr)]
+
+def roots_symbolic(poly):
+    """
+    Finds positive, real roots of a symbolic polynomial.
+
+    Parameters:
+    - poly (sympy expression): Polynomial for which to find roots.
+
+    Returns:
+    - list of floats: Positive, real roots of the polynomial.
+    """
+    x = symbols('b')
+    roots = solve(poly, x)
+    return [root.evalf() for root in roots if root.is_real and root > 0]
 
 
 def sturm_sequence(p):
+    """
+    Generates the Sturm sequence for a given polynomial.
+
+    Parameters:
+    - p (sympy.Poly): Polynomial for which to generate the Sturm sequence.
+
+    Returns:
+    - list: List of polynomials representing the Sturm sequence.
+    """
+    x0, b = sp.symbols('x0 b')
     p0 = p
     p1 = diff(p, b)
     sturm_seq = [p0, p1]
-
     # Generate the rest of the Sturm sequence using sympy's polynomial division
     while not sturm_seq[-1].is_zero:
         p_i, remainder = sturm_seq[-2].as_expr(), sturm_seq[-1].as_expr()
         div_result = Poly(p_i, b).div(Poly(remainder, b))
         sturm_seq.append(-div_result[1])
-
     # Remove the last polynomial if it's zero.
     if sturm_seq[-1].is_zero:
         sturm_seq.pop()
-
     return [p.as_expr() for p in sturm_seq]
 
 def count_sign_changes(sequence, value):
+    """
+    Counts the number of sign changes in a Sturm sequence at a given value.
+    Handles NaN and complex numbers by ignoring them or treating them according to research needs.
+
+    Parameters:
+    - sequence (list): Sturm sequence as a list of sympy expressions.
+    - value (float): Value at which to evaluate the sign changes.
+
+    Returns:
+    - int: Number of sign changes in the sequence at the given value.
+    """
+    x0, b = sp.symbols('x0 b')
     signs = [p.subs(b, value) for p in sequence]
     sign_changes = 0
     previous_sign = None
@@ -152,87 +213,44 @@ def count_sign_changes(sequence, value):
         if previous_sign is not None and current_sign != previous_sign:
             sign_changes += 1
         previous_sign = current_sign
-
     return sign_changes
 
-def count_positive_roots(p):
-    sturm_seq = sturm_sequence(Poly(p, b))
 
+def count_positive_roots(p):
+    """
+    Uses the Sturm sequence method to count the number of positive roots of a polynomial.
+
+    Parameters:
+    - p (sympy.Poly): Polynomial for which to count the positive roots.
+
+    Returns:
+    - int: Number of positive roots of the polynomial.
+    """
+    x0, b = sp.symbols('x0 b')
+    sturm_seq = sturm_sequence(Poly(p, b))
     # Count sign changes at positive infinity and zero.
     sign_changes_at_inf = count_sign_changes(sturm_seq, 1e10)  # Simulate positive infinity.
     sign_changes_at_zero = count_sign_changes(sturm_seq, 0) #INCLUDING 0
-
     return sign_changes_at_zero - sign_changes_at_inf 
 
-# Example usage:
-#x = symbols('x')
-#p = x**2 - 6*x # Define your polynomial here.
-#num_positive_roots = count_positive_roots(B[1])
-#print(f'Number of positive roots: {num_positive_roots}')
+def groeb(x_i, t_i):
+    """
+    Calculates the Groebner basis for the system of equations derived from the SSE's partial derivatives.
 
+    Parameters:
+    - x_i (numpy.ndarray): Observed data values.
+    - t_i (numpy.ndarray): Corresponding time points.
 
-
-def evaluate_hessian_at_extremas(params, x_i, t_i):
+    Returns:
+    - list: Groebner basis of the system, facilitating the solution for model parameters x0 and b.
+    
+    The Groebner basis is computed for the system formed by the partial derivatives of the SSE,
+    with respect to the initial value x0 and growth factor b, of an exponential growth model.
+    """
     x0, b = sp.symbols('x0 b')
-    # Define SSE_poly using the provided x_i and t_i
     SSE_poly = sum([(x - x0 * b**t)**2 for x, t in zip(x_i, t_i)])
+    partial_x0 = sp.diff(SSE_poly, x0)
+    partial_b = sp.diff(SSE_poly, b)
+    B = sp.groebner([partial_x0, partial_b], x0, b, order='lex')
     
-    # Compute the general Hessian matrix
-    partial_x0x0 = sp.diff(SSE_poly, x0, x0)
-    partial_x0b = sp.diff(SSE_poly, x0, b)
-    partial_bb = sp.diff(SSE_poly, b, b)
-    
-    hessian_general = sp.Matrix([
-        [partial_x0x0, partial_x0b],
-        [partial_x0b, partial_bb]  # Symmetry in mixed partials
-    ])
-    #print(f'Hessian General: {hessian_general}')    
-    maxima_results = []
-
-    for param in params:
-        # Substitute the extremas into the general Hessian
-        hessian_at_point = hessian_general.subs({x0: param[0], b: np.exp(param[1])})
-        #print(f'Hessian at point: {hessian_at_point}')
-        det = hessian_at_point.det()
-        trace = hessian_at_point.trace()
-        
-        # Check for negative definiteness (indicative of a maximum) using det and trace
-        if det > 0 and trace > 0:
-            maxima_results.append((param, True))
-        else:
-            maxima_results.append((param, False))
-    
-    return maxima_results
-
-# Example usage:
-# params = [(root_x0, root_b), ...] # Replace with actual roots of the gradient
-# x_i = [...] # Your x_i values
-# t_i = [...] # Your t_i values
-# maxima_checks = evaluate_hessian_at_extremas(params, x_i, t_i)
-
-def find_x0_alpha_pairs(G,b_arr):
-    first_eq = G[0]
-    x0, b = sp.symbols('x0 b')
-    
-    x0_arr = []
-    alpha_arr = []
-    for b_i in b_arr:
-        x0_i = sp.solve(first_eq.subs(b, b_i), x0)[0]
-        x0_arr.append(x0_i)
-        alpha = sp.log(b_i)
-        alpha_arr.append(alpha)
-    
-    # Return the (x0, alpha) pairs
-    ret = []
-    for i in range(len(x0_arr)):
-        ret.append((float(x0_arr[i]), float(alpha_arr[i])))
-    return ret
-
-def roots_symbolic(poly):
-    x = symbols('b')
-    # Define your polynomial
-    # Solve polynomial
-    roots = solve(poly, x)
-    # Filter positive roots
-    positive_roots_symbolic = [root.evalf() for root in roots if root.is_real and root > 0]
-    return positive_roots_symbolic
+    return B
