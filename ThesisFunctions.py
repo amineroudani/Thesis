@@ -39,13 +39,16 @@ def sse(params, data):
     predictions = model(data['Time'], x0, alpha)
     return np.sum((data['Data'] - predictions) ** 2)
 
+
+
 def data_gen(num_data_points=4, noise_level=0.1, alpha=2, x0=1):
     """
-    Generates synthetic data based on the exponential growth model with added noise.
+    Generates synthetic data based on the exponential growth model with added noise,
+    where the noise is a certain percentage of the data value, distributed normally.
 
     Parameters:
     - num_data_points (int): Number of data points to generate.
-    - noise_level (float/int): Standard deviation of the Gaussian noise.
+    - noise_level (float/int): Proportional standard deviation of the Gaussian noise as a percentage of each data point value.
     - alpha (float/int): True growth rate parameter used for data generation.
     - x0 (float/int): True initial value used for data generation.
 
@@ -54,10 +57,44 @@ def data_gen(num_data_points=4, noise_level=0.1, alpha=2, x0=1):
     """
     t = np.arange(num_data_points)
     x = x0 * np.exp(alpha * t)
-    noise = np.random.normal(0, noise_level, size=t.shape)
-    x_noisy = x + noise
+    # Generate noise as a percentage of x, ensuring it does not exceed x itself
+    
+    noise = noise_level * x *  np.random.normal(0, 1, size=t.shape)
+    noise = np.clip(noise, -x/4, x/4)
+
+    # Ensuring noise does not exceed the value of x
+    #noise = np.clip(noise, -x/4, x/4)
+    x_noisy = x + noise    
+
+    # Convert noisy data to a rational number with a maximum limit
     x_noisy_rational = np.array([min(sp.Rational(int(xn * 100), 100), 10000) for xn in x_noisy])
-    return pd.DataFrame({'Time': t, 'Data': x_noisy_rational})
+    data = pd.DataFrame({'Time': t, 'Data': x_noisy_rational})
+    return data
+
+
+
+# def data_gen(num_data_points=4, noise_level=0.1, alpha=2, x0=1):
+#     """
+#     Generates synthetic data based on the exponential growth model with added noise.
+
+#     Parameters:
+#     - num_data_points (int): Number of data points to generate.
+#     - noise_level (float/int): Standard deviation of the Gaussian noise.
+#     - alpha (float/int): True growth rate parameter used for data generation.
+#     - x0 (float/int): True initial value used for data generation.
+
+#     Returns:
+#     - pd.DataFrame: Generated data containing 'Time' and 'Data' columns.
+#     """
+#     t = np.arange(num_data_points)
+#     x = x0 * np.exp(alpha * t)
+#     noise = np.random.normal(0, noise_level, size=t.shape)
+#     x_noisy = x + noise
+
+#     x_noisy_rational = np.array([min(sp.Rational(int(xn * 100), 100), 10000) for xn in x_noisy])
+#     data = pd.DataFrame({'Time': t, 'Data': x_noisy_rational})
+#     #print(data)
+#     return data
 
 def run_optimization(num_runs, initial_guess, data, method='L-BFGS-B', bounds=None):
     """
@@ -104,7 +141,8 @@ def error_matrix(alpha_range, x0_range, data, num_runs=1):
             error_matrix[i, j] = sse(final_param[0], data) if len(final_param) > 0 else np.inf
     return error_matrix
 
-def evaluate_hessian_at_extremas(params, x_i, t_i):
+
+def evaluate_hessian_at_extremas(params, x_i, t_i, epsilon = 0.001):
     """
     Evaluates the Hessian matrix at the estimated extremas to determine if they represent maxima.
 
@@ -124,14 +162,66 @@ def evaluate_hessian_at_extremas(params, x_i, t_i):
     hessian_general = sp.Matrix([[partial_x0x0, partial_x0b], [partial_x0b, partial_bb]])
     maxima_results = []
     for param in params:
+        #if param[0] < epsilon:
+        #   maxima_results.append((param, True))
+        #else:
         hessian_at_point = hessian_general.subs({x0: param[0], b: np.exp(param[1])})
+        #print(hessian_at_point)
         det = hessian_at_point.det()
         trace = hessian_at_point.trace()
         if det > 0 and trace > 0:
             maxima_results.append((param, True))
         else:
-            maxima_results.append((param, False))
+            print("hessian is zero")
+            B = groeb(t_i, x_i)
+            params_ = find_roots_alternative(B[1])
+            print("rec")
+            evaluate_hessian_at_extremas(params, x_i, t_i)
     return maxima_results
+
+def find_roots_alternative(poly):
+    b = sp.symbols('b')
+    
+    # Convert sympy polynomial to a function for Newton's method
+    poly_func = sp.lambdify(b, poly, 'numpy')
+    poly_derivative = sp.diff(poly, b)
+    poly_derivative_func = sp.lambdify(b, poly_derivative, 'numpy')
+    
+    # Call sturm algo
+    num_positive_roots = count_positive_roots(poly)
+
+    # Call Newton Method
+    positive_roots = find_roots_newton(poly_func, poly_derivative_func, num_positive_roots)
+
+    return positive_roots
+
+
+# Newton's method to find roots
+def find_roots_newton(func, func_prime, num_roots, initial_guess_range=(0, 10), max_attempts_per_root=100):
+    roots_found = []
+    for _ in range(num_roots):
+        root_found = False
+        attempts = 0
+        while not root_found and attempts < max_attempts_per_root:
+            initial_guess = np.random.uniform(*initial_guess_range)
+            try:
+                root = newton(func, initial_guess, fprime=func_prime, maxiter=50)
+                if root>0 and all(abs(root - found_root) > 1e-5 for found_root in roots_found):
+                    roots_found.append(root)
+                    root_found = True
+            except RuntimeError:
+                pass  # Handle case where Newton's method fails
+            attempts += 1
+        if not root_found:
+            raise ValueError("Failed to find all positive roots after specified attempts.")
+    
+    
+    #Making sure the roots are positive MISLEADING?
+    
+    
+    ret = [root for root in roots_found if root>0]
+    return ret
+
 
 def find_x0_alpha_pairs(G, b_arr):
     """
