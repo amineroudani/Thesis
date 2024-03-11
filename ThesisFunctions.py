@@ -59,8 +59,7 @@ def data_gen(num_data_points=4, noise_level=0.1, alpha=2, x0=1):
     x = x0 * np.exp(alpha * t)
     # Generate noise as a percentage of x, ensuring it does not exceed x itself
     
-    noise = noise_level * x *  np.random.normal(0, 1, size=t.shape)
-    noise = np.clip(noise, -x/4, x/4)
+    noise = noise_level * x *  np.random.normal(0, 1, size=t.shape) * 0.1
 
     # Ensuring noise does not exceed the value of x
     #noise = np.clip(noise, -x/4, x/4)
