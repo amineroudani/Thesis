@@ -161,21 +161,22 @@ def evaluate_hessian_at_extremas(params, x_i, t_i, epsilon = 0.001):
     hessian_general = sp.Matrix([[partial_x0x0, partial_x0b], [partial_x0b, partial_bb]])
     maxima_results = []
     for param in params:
-        #if param[0] < epsilon:
-        #   maxima_results.append((param, True))
-        #else:
         hessian_at_point = hessian_general.subs({x0: param[0], b: np.exp(param[1])})
         #print(hessian_at_point)
         det = hessian_at_point.det()
         trace = hessian_at_point.trace()
+
         if det > 0 and trace > 0:
             maxima_results.append((param, True))
         else:
-            print("hessian is zero")
-            B = groeb(t_i, x_i)
-            params_ = find_roots_alternative(B[1])
-            print("rec")
-            evaluate_hessian_at_extremas(params, x_i, t_i)
+            maxima_results.append((param, False))
+    #s = sum(1 for _, is_true in maxima_results if is_true)
+    #if s == 0:
+        #for param in params:
+            #print("No minimas found, checking Gradient")
+            #print(sp.diff(SSE_poly, x0).subs({x0: param[0], b: np.exp(param[1])}))
+            #print(sp.diff(SSE_poly, b).subs({x0: param[0], b: np.exp(param[1])}))
+            #print(maxima_results)
     return maxima_results
 
 def find_roots_alternative(poly):
@@ -194,9 +195,11 @@ def find_roots_alternative(poly):
 
     return positive_roots
 
+from scipy.optimize import newton
+
 
 # Newton's method to find roots
-def find_roots_newton(func, func_prime, num_roots, initial_guess_range=(0, 10), max_attempts_per_root=100):
+def find_roots_newton(func, func_prime, num_roots, initial_guess_range=(-10, 10), max_attempts_per_root=100):
     roots_found = []
     for _ in range(num_roots):
         root_found = False
@@ -212,6 +215,8 @@ def find_roots_newton(func, func_prime, num_roots, initial_guess_range=(0, 10), 
                 pass  # Handle case where Newton's method fails
             attempts += 1
         if not root_found:
+            return roots_found
+            print(roots_found)
             raise ValueError("Failed to find all positive roots after specified attempts.")
     
     
@@ -221,6 +226,39 @@ def find_roots_newton(func, func_prime, num_roots, initial_guess_range=(0, 10), 
     ret = [root for root in roots_found if root>0]
     return ret
 
+def grid_search_around_extrema(extrema, data, grid_size=12, step_size=0.01):
+    """
+    Performs a grid search around an extrema to find a local minimum.
+
+    Parameters:
+    - extrema (tuple): The (x0, alpha) around which to center the grid search.
+    - data (pd.DataFrame): The observed data.
+    - grid_size (int): The width/height of the grid (must be odd to have a center).
+    - step_size (float): The step size between points in the grid.
+
+    Returns:
+    - tuple: (best_params, is_edge) where best_params is the best (x0, alpha) found and
+             is_edge is a boolean indicating if this point is on the edge of the grid.
+    """
+
+    x0_center, alpha_center = extrema
+    half_grid = grid_size // 2
+    best_sse = float('inf')
+    best_params = None
+    is_edge = False
+
+    for i in range(-half_grid, half_grid + 1):
+        for j in range(-half_grid, half_grid + 1):
+            x0 = x0_center + i * step_size
+            alpha = alpha_center + j * step_size
+            current_sse = sse((x0, alpha), data)
+            
+            if current_sse < best_sse:
+                best_sse = current_sse
+                best_params = (x0, alpha)
+                is_edge = i in (-half_grid, half_grid) or j in (-half_grid, half_grid)
+
+    return best_params, is_edge
 
 def find_x0_alpha_pairs(G, b_arr):
     """
