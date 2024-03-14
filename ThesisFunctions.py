@@ -179,6 +179,45 @@ def evaluate_hessian_at_extremas(params, x_i, t_i, epsilon = 0.001):
             #print(maxima_results)
     return maxima_results
 
+
+def evaluate_hessian_at_minimas_4x4(params, x_i, t_i):
+    """
+    Evaluates the Hessian matrix at the estimated minimas to determine if they represent minima.
+
+    Parameters:
+    - params (list of tuples): Estimated parameter sets (A_1, A_2, b_1, b_2).
+
+    Returns:
+    - list of tuples: Each tuple contains the parameter set and a boolean indicating if it is a minimum.
+    """
+    # Define your symbols
+    A_1, A_2, b_1, b_2 = sp.symbols('A_1 A_2 b_1 b_2')
+    SSE_poly = sum([(x - A_1 * b_1 ** t + A_2 * b_2 ** t  )**2 for x, t in zip(x_i, t_i)])  # Adjust according to your model
+
+    # Compute the second derivatives to form the Hessian matrix
+    partials = [[A_1, A_2, b_1, b_2], [A_1, A_2, b_1, b_2]]
+    Hessian = sp.Matrix([[sp.diff(sp.diff(SSE_poly, i), j) for i in partials[0]] for j in partials[1]])
+
+    minima_results = []
+    for param in params:
+        # Substitute parameter values into Hessian
+        Hessian_at_point = Hessian.subs({A_1: param[0], A_2: param[1], b_1: param[2], b_2: param[3]})
+        
+        # Convert Hessian to a numerical matrix for eigenvalue computation
+        Hessian_num = np.array(Hessian_at_point).astype(np.float64)
+        
+        # Compute eigenvalues
+        eigenvalues = np.linalg.eigvals(Hessian_num)
+        
+        # Check if all eigenvalues are positive
+        if all(val > 0 for val in eigenvalues):
+            minima_results.append((param, True))
+        else:
+            minima_results.append((param, False))
+
+    return minima_results
+
+
 def find_roots_alternative(poly):
     b = sp.symbols('b')
     
