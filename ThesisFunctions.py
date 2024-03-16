@@ -182,13 +182,20 @@ def evaluate_hessian_at_extremas(params, x_i, t_i, epsilon = 0.001):
 
 def evaluate_hessian_at_minimas_4x4(params, x_i, t_i):
     """
-    Evaluates the Hessian matrix at the estimated minimas to determine if they represent minima.
+    Evaluates the Hessian matrix at the estimated minimas to ascertain their true nature,
+    specifically determining if they are indeed minimas. This is achieved by constructing
+    and analyzing a 4x4 Hessian matrix based on the second derivatives of the SSE polynomial,
+    which is adjusted for a model involving combinations of parameters A_1, A_2, b_1, and b_2.
 
     Parameters:
-    - params (list of tuples): Estimated parameter sets (A_1, A_2, b_1, b_2).
+    - params (list of tuples): Estimated parameter sets (A_1, A_2, b_1, b_2), each representing
+      a unique combination of model parameters under consideration.
+    - x_i (list): The observed data values.
+    - t_i (list): The corresponding time values for the observed data.
 
     Returns:
-    - list of tuples: Each tuple contains the parameter set and a boolean indicating if it is a minimum.
+    - list of tuples: Each tuple contains a parameter set and a boolean indicating if it represents
+      a minimum, based on the positiveness of all eigenvalues of the Hessian matrix evaluated at those parameters.
     """
     # Define your symbols
     A_1, A_2, b_1, b_2 = sp.symbols('A_1 A_2 b_1 b_2')
@@ -219,6 +226,19 @@ def evaluate_hessian_at_minimas_4x4(params, x_i, t_i):
 
 
 def find_roots_alternative(poly):
+    """
+    An alternative method to identify the roots of a given polynomial by first applying Sturm's theorem
+    to count the number of positive roots and then employing Newton's method to accurately find these roots.
+    This function demonstrates an innovative approach to root finding, especially when dealing with polynomials
+    where traditional methods might struggle.
+
+    Parameters:
+    - poly (sympy expression): The polynomial for which positive roots are to be found.
+
+    Returns:
+    - list: A list of positive roots found using Newton's method, guided by the initial count obtained
+      through Sturm's theorem.
+    """
     b = sp.symbols('b')
     
     # Convert sympy polynomial to a function for Newton's method
@@ -239,6 +259,27 @@ from scipy.optimize import newton
 
 # Newton's method to find roots
 def find_roots_newton(func, func_prime, num_roots, initial_guess_range=(-10, 10), max_attempts_per_root=100):
+    """
+    Utilizes Newton's method to find positive roots of a given function.
+
+    This function attempts to find a specified number of positive roots for a given function
+    using Newton's method. It iterates through random initial guesses within a specified range
+    and applies Newton's method to find roots. If a positive root is found that is distinct 
+    (within a threshold) from previously found roots, it is added to the list of roots.
+
+    Parameters:
+    - func (callable): The function for which roots are being found.
+    - func_prime (callable): The derivative of the function.
+    - num_roots (int): The number of positive roots to find.
+    - initial_guess_range (tuple of float): The range (min, max) for the initial guess for Newton's method.
+    - max_attempts_per_root (int): Maximum number of attempts to find each root.
+
+    Returns:
+    - list of float: A list of the positive roots found.
+
+    Raises:
+    - ValueError: If it fails to find the specified number of positive roots after the given number of attempts.
+    """
     roots_found = []
     for _ in range(num_roots):
         root_found = False
@@ -254,13 +295,7 @@ def find_roots_newton(func, func_prime, num_roots, initial_guess_range=(-10, 10)
                 pass  # Handle case where Newton's method fails
             attempts += 1
         if not root_found:
-            return roots_found
-            print(roots_found)
             raise ValueError("Failed to find all positive roots after specified attempts.")
-    
-    
-    #Making sure the roots are positive MISLEADING?
-    
     
     ret = [root for root in roots_found if root>0]
     return ret
@@ -417,6 +452,7 @@ def groeb(x_i, t_i):
     SSE_poly = sum([(x - x0 * b**t)**2 for x, t in zip(x_i, t_i)])
     partial_x0 = sp.diff(SSE_poly, x0)
     partial_b = sp.diff(SSE_poly, b)
+    #print(partial_x0, partial_b)
     B = sp.groebner([partial_x0, partial_b], x0, b, order='lex')
     
     return B
