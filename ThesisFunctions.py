@@ -8,6 +8,7 @@ import sympy.plotting as spp
 from sympy import symbols, diff, Poly, solve
 from mpl_toolkits.mplot3d import Axes3D
 
+
 def model(t, x0, alpha):
     """
     Exponential growth model.
@@ -179,52 +180,6 @@ def evaluate_hessian_at_extremas(params, x_i, t_i, epsilon = 0.001):
             #print(maxima_results)
     return maxima_results
 
-
-def evaluate_hessian_at_minimas_4x4(params, x_i, t_i):
-    """
-    Evaluates the Hessian matrix at the estimated minimas to ascertain their true nature,
-    specifically determining if they are indeed minimas. This is achieved by constructing
-    and analyzing a 4x4 Hessian matrix based on the second derivatives of the SSE polynomial,
-    which is adjusted for a model involving combinations of parameters A_1, A_2, b_1, and b_2.
-
-    Parameters:
-    - params (list of tuples): Estimated parameter sets (A_1, A_2, b_1, b_2), each representing
-      a unique combination of model parameters under consideration.
-    - x_i (list): The observed data values.
-    - t_i (list): The corresponding time values for the observed data.
-
-    Returns:
-    - list of tuples: Each tuple contains a parameter set and a boolean indicating if it represents
-      a minimum, based on the positiveness of all eigenvalues of the Hessian matrix evaluated at those parameters.
-    """
-    # Define your symbols
-    A_1, A_2, b_1, b_2 = sp.symbols('A_1 A_2 b_1 b_2')
-    SSE_poly = sum([(x - A_1 * b_1 ** t + A_2 * b_2 ** t  )**2 for x, t in zip(x_i, t_i)])  # Adjust according to your model
-
-    # Compute the second derivatives to form the Hessian matrix
-    partials = [[A_1, A_2, b_1, b_2], [A_1, A_2, b_1, b_2]]
-    Hessian = sp.Matrix([[sp.diff(sp.diff(SSE_poly, i), j) for i in partials[0]] for j in partials[1]])
-
-    minima_results = []
-    for param in params:
-        # Substitute parameter values into Hessian
-        Hessian_at_point = Hessian.subs({A_1: param[0], A_2: param[1], b_1: param[2], b_2: param[3]})
-        
-        # Convert Hessian to a numerical matrix for eigenvalue computation
-        Hessian_num = np.array(Hessian_at_point).astype(np.float64)
-        
-        # Compute eigenvalues
-        eigenvalues = np.linalg.eigvals(Hessian_num)
-        
-        # Check if all eigenvalues are positive
-        if all(val > 0 for val in eigenvalues):
-            minima_results.append((param, True))
-        else:
-            minima_results.append((param, False))
-
-    return minima_results
-
-
 def find_roots_alternative(poly):
     """
     An alternative method to identify the roots of a given polynomial by first applying Sturm's theorem
@@ -295,7 +250,7 @@ def find_roots_newton(func, func_prime, num_roots, initial_guess_range=(-10, 10)
                 pass  # Handle case where Newton's method fails
             attempts += 1
         if not root_found:
-            raise ValueError("Failed to find all positive roots after specified attempts.")
+            return []
     
     ret = [root for root in roots_found if root>0]
     return ret
@@ -456,3 +411,139 @@ def groeb(x_i, t_i):
     B = sp.groebner([partial_x0, partial_b], x0, b, order='lex')
     
     return B
+
+
+
+#########
+# 4D functions for Multi-dimensional work
+
+
+
+def model_2D(t, A_1, alpha_1, A_2, alpha_2):
+    """
+    Calculates the sum of two exponentials at given times.
+    
+    Args:
+        t (array-like): The time points for the calculation.
+        A_1 (float): Amplitude of the first exponential term.
+        alpha_1 (float): Decay rate of the first exponential term.
+        A_2 (float): Amplitude of the second exponential term.
+        alpha_2 (float): Decay rate of the second exponential term.
+    
+    Returns:
+        np.array: The calculated sum of two exponential functions.
+    """
+    exp_input1 = float(alpha_1) * np.array(t, dtype=float)
+    exp_input2 = float(alpha_2) * np.array(t, dtype=float)
+    return A_1 * np.exp(exp_input1) + A_2 * np.exp(exp_input2)
+
+
+def sse_2D(params, data):
+   """
+    Computes the sum of squared errors between model predictions and actual data.
+    
+    Args:
+        params (tuple): A tuple of parameters (A_1, alpha_1, A_2, alpha_2) for the model.
+        data (pd.DataFrame): DataFrame containing 'Time' and 'Data' columns.
+    
+    Returns:
+        float: The calculated sum of squared errors.
+    """
+    A_1, alpha_1, A_2, alpha_2 = params
+    predictions = model_2D(data['Time'], A_1, alpha_1, A_2, alpha_2)
+    return np.sum((data['Data'] - predictions) ** 2)
+
+
+def data_gen_2D(num_data_points=4, noise_level=0.1, A_1=1, alpha_1=1, A_2=1, alpha_2=1):
+    """
+    Generates synthetic data based on the sum of two exponentials plus noise.
+    
+    Args:
+        num_data_points (int): Number of data points to generate.
+        noise_level (float): Standard deviation of Gaussian noise.
+        A_1 (float): Amplitude of the first exponential term.
+        alpha_1 (float): Decay rate of the first exponential term.
+        A_2 (float): Amplitude of the second exponential term.
+        alpha_2 (float): Decay rate of the second exponential term.
+    
+    Returns:
+        pd.DataFrame: DataFrame with columns 'Time' and 'Data' containing the generated data.
+    """
+    t = np.arange(num_data_points)
+    x = A_1 * np.exp(alpha_1 * t) + A_2 * np.exp(alpha_2 * t)
+                                                 
+    noise = noise_level * x *  np.random.normal(0, 1, size=t.shape) * 0.1
+         
+    x_noisy = x + noise    
+
+    x_noisy_rational = np.array([min(sp.Rational(int(xn * 100), 100), 10000000) for xn in x_noisy])
+    data = pd.DataFrame({'Time': t, 'Data': x_noisy_rational})
+    return data
+
+def groeb_2D(x_i, t_i):
+     """
+    Computes the Groebner basis for the system of equations derived from partial derivatives of SSE.
+    
+    Args:
+        x_i (list): List of data points.
+        t_i (list): List of time points corresponding to the data points.
+    
+    Returns:
+        GroebnerBasis: The Groebner basis for the system, which simplifies solving the equations.
+    """
+    A_1, b_1, A_2, b_2 = sp.symbols('A_1 b_1 A_2 b_2')
+    SSE_poly = sum([(x - (A_1 * b_1**t + A_2 * b_2**t))**2 for x, t in zip(x_i, t_i)])
+    print(SSE_poly)
+    partial_A_1 = sp.diff(SSE_poly, A_1)
+    partial_b_1 = sp.diff(SSE_poly, b_1)
+    partial_A_2 = sp.diff(SSE_poly, A_2)
+    partial_b_2 = sp.diff(SSE_poly, b_2)
+    
+    B = sp.groebner([partial_A_1, partial_b_1, partial_A_2, partial_b_2], A_1, b_1, A_2, b_2, order='lex')
+    
+    return B
+
+
+def evaluate_hessian_at_minimas_4x4(params, x_i, t_i):
+    """
+    Evaluates the Hessian matrix at the estimated minimas to ascertain their true nature,
+    specifically determining if they are indeed minimas. This is achieved by constructing
+    and analyzing a 4x4 Hessian matrix based on the second derivatives of the SSE polynomial,
+    which is adjusted for a model involving combinations of parameters A_1, A_2, b_1, and b_2.
+
+    Parameters:
+    - params (list of tuples): Estimated parameter sets (A_1, A_2, b_1, b_2), each representing
+      a unique combination of model parameters under consideration.
+    - x_i (list): The observed data values.
+    - t_i (list): The corresponding time values for the observed data.
+
+    Returns:
+    - list of tuples: Each tuple contains a parameter set and a boolean indicating if it represents
+      a minimum, based on the positiveness of all eigenvalues of the Hessian matrix evaluated at those parameters.
+    """
+    # Define your symbols
+    A_1, A_2, b_1, b_2 = sp.symbols('A_1 A_2 b_1 b_2')
+    SSE_poly = sum([(x - A_1 * b_1 ** t + A_2 * b_2 ** t  )**2 for x, t in zip(x_i, t_i)])  # Adjust according to your model
+
+    # Compute the second derivatives to form the Hessian matrix
+    partials = [[A_1, A_2, b_1, b_2], [A_1, A_2, b_1, b_2]]
+    Hessian = sp.Matrix([[sp.diff(sp.diff(SSE_poly, i), j) for i in partials[0]] for j in partials[1]])
+    print(Hessian)
+    minima_results = []
+    for param in params:
+        # Substitute parameter values into Hessian
+        Hessian_at_point = Hessian.subs({A_1: param[0], A_2: param[1], b_1: param[2], b_2: param[3]})
+        
+        # Convert Hessian to a numerical matrix for eigenvalue computation
+        Hessian_num = np.array(Hessian_at_point).astype(np.float64)
+        
+        # Compute eigenvalues
+        eigenvalues = np.linalg.eigvals(Hessian_num)
+        
+        # Check if all eigenvalues are positive
+        if all(val > 0 for val in eigenvalues):
+            minima_results.append((param, True))
+        else:
+            minima_results.append((param, False))
+
+    return minima_results
