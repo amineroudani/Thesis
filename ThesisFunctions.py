@@ -481,7 +481,7 @@ def data_gen_2D(num_data_points=4, noise_level=0.1, A_1=1, alpha_1=1, A_2=1, alp
     return data
 
 def groeb_2D(x_i, t_i):
-     """
+    """
     Computes the Groebner basis for the system of equations derived from partial derivatives of SSE.
     
     Args:
